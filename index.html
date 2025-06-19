@@ -2,16 +2,141 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Barcode Scanner</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Barcode Scanner with OpenFDA Lookup</title>
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    #reader {
+      width: 300px;
+      margin: 0 auto;
+    }
+    #result {
+      margin-top: 20px;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+    }
+  </style>
 </head>
 <body>
-  <h1>Scan a Barcode</h1>
-  <div id="reader" style="width: 300px;"></div>
-  <div id="result"></div>
+  <h1>Scan Barcode to Lookup Drug/Device</h1>
+  <div id="reader"></div>
+  <div id="result">Scan a barcode to begin...</div>
 
-  <script src="script.js"></script>
+  <script>
+    function onScanSuccess(decodedText, decodedResult) {
+      document.getElementById('result').innerHTML = `<p>Scanned: ${decodedText}</p>`;
+
+      // Decide what kind of code it might be
+      if (/^\d{12,14}$/.test(decodedText)) {
+        // UPC or GTIN
+        lookupUPC(decodedText);
+      } else if (/^\d{5}-\d{4}/.test(decodedText)) {
+        // NDC format
+        lookupDrug(decodedText);
+      } else {
+        // Try both as NDC and device product code fallback
+        lookupDrugOrDevice(decodedText);
+      }
+    }
+
+    function onScanFailure(error) {
+      // Fail quietly
+    }
+
+    const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
+    html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+
+    function lookupDrug(code) {
+      const url = `https://api.fda.gov/drug/ndc.json?search=product_ndc:${code}`;
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          const drug = data.results[0];
+          document.getElementById('result').innerHTML += `
+            <h2>Drug Info</h2>
+            <p><strong>Brand:</strong> ${drug.brand_name}</p>
+            <p><strong>Generic:</strong> ${drug.generic_name}</p>
+            <p><strong>Manufacturer:</strong> ${drug.labeler_name}</p>
+            <p><strong>Dosage:</strong> ${drug.dosage_form}</p>
+          `;
+        })
+        .catch(() => {
+          document.getElementById('result').innerHTML += `<p>No drug info found with NDC.</p>`;
+        });
+    }
+
+    function lookupDevice(code) {
+      const url = `https://api.fda.gov/device/registrationlisting.json?search=product_code:${code}`;
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          const device = data.results[0];
+          document.getElementById('result').innerHTML += `
+            <h2>Device Info</h2>
+            <p><strong>Device Name:</strong> ${device.device_name}</p>
+            <p><strong>Proprietary Name:</strong> ${device.proprietary_name}</p>
+            <p><strong>Establishment:</strong> ${device.establishment_name}</p>
+            <p><strong>Registration No:</strong> ${device.registration_number}</p>
+          `;
+        })
+        .catch(() => {
+          document.getElementById('result').innerHTML += `<p>No device info found.</p>`;
+        });
+    }
+
+    function lookupDrugOrDevice(code) {
+      lookupDrug(code);
+      setTimeout(() => lookupDevice(code), 2000); // Delay to allow drug search first
+    }
+
+    function lookupUPC(upc) {
+      const url = `https://api.upcitemdb.com/prod/trial/lookup?upc=${upc}`;
+
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          if (data.code === "OK" && data.items.length > 0) {
+            const item = data.items[0];
+            const name = item.title;
+            document.getElementById('result').innerHTML += `
+              <h2>UPC Info</h2>
+              <p><strong>Product Name:</strong> ${name}</p>
+              <p>Searching OpenFDA for: <strong>${name}</strong></p>
+            `;
+            searchOpenFDAByName(name);
+          } else {
+            document.getElementById('result').innerHTML += `<p>UPC found, but no product details.</p>`;
+          }
+        })
+        .catch(() => {
+          document.getElementById('result').innerHTML += `<p>UPC lookup failed.</p>`;
+        });
+    }
+
+    function searchOpenFDAByName(name) {
+      const query = encodeURIComponent(name);
+      const url = `https://api.fda.gov/drug/label.json?search=openfda.brand_name:"${query}"`;
+
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          const result = data.results[0];
+          document.getElementById('result').innerHTML += `
+            <h2>OpenFDA Drug Match</h2>
+            <p><strong>Brand Name:</strong> ${result.openfda.brand_name}</p>
+            <p><strong>Manufacturer:</strong> ${result.openfda.manufacturer_name}</p>
+            <p><strong>Purpose:</strong> ${result.purpose?.join(", ") || 'N/A'}</p>
+          `;
+        })
+        .catch(() => {
+          document.getElementById('result').innerHTML += `<p>No FDA drug info found for this name.</p>`;
+        });
+    }
+  </script>
 </body>
 </html>
