@@ -19,6 +19,14 @@
       padding: 15px;
       border: 1px solid #ccc;
       border-radius: 10px;
+      background: #f9f9f9;
+    }
+    h2 {
+      margin-top: 20px;
+      color: #004080;
+    }
+    p {
+      margin: 5px 0;
     }
   </style>
 </head>
@@ -32,27 +40,29 @@
       const scanned = decodedText.trim();
       document.getElementById('result').innerHTML = `<p><strong>Scanned:</strong> ${scanned}</p>`;
 
-      // Handle full UDI like (01)00860000667003
-      const match = scanned.match(/\(01\)(\d{14})/);
-      if (match) {
-        lookupDevice(match[1]);
+      // Try extracting GTIN from UDI pattern
+      const gtinMatch = scanned.match(/\(01\)(\d{14})/);
+      if (gtinMatch) {
+        lookupDevice(gtinMatch[1]);
         return;
       }
 
+      // If it's 12–14 digit number (UPC/GTIN)
       if (/^\d{12,14}$/.test(scanned)) {
-        // UPC or GTIN
         lookupUPC(scanned);
-      } else if (/^\d{5}-\d{4}/.test(scanned)) {
-        // NDC format
+      }
+      // If it's in NDC format (e.g. 0573-0149)
+      else if (/^\d{4,5}-\d{3,4}$/.test(scanned)) {
         lookupDrug(scanned);
-      } else {
-        // Try both drug and device lookup
+      }
+      // Otherwise try both
+      else {
         lookupDrugOrDevice(scanned);
       }
     }
 
     function onScanFailure(error) {
-      // Do nothing for now
+      // Fail quietly
     }
 
     const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
@@ -72,8 +82,8 @@
             <p><strong>Dosage:</strong> ${drug.dosage_form}</p>
           `;
         })
-        .catch(() => {
-          document.getElementById('result').innerHTML += `<p>No drug info found with NDC.</p>`;
+        .catch(err => {
+          document.getElementById('result').innerHTML += `<p style="color:red;">No drug info found (NDC). ${err.message || ''}</p>`;
         });
     }
 
@@ -91,14 +101,14 @@
             <p><strong>PMA Number:</strong> ${device.premarket_submission_number || "N/A"}</p>
           `;
         })
-        .catch(() => {
-          document.getElementById('result').innerHTML += `<p>No device info found for GTIN.</p>`;
+        .catch(err => {
+          document.getElementById('result').innerHTML += `<p style="color:red;">No device info found. ${err.message || ''}</p>`;
         });
     }
 
     function lookupDrugOrDevice(code) {
       lookupDrug(code);
-      setTimeout(() => lookupDevice(code), 2000);
+      setTimeout(() => lookupDevice(code), 2000); // Try device after delay
     }
 
     function lookupUPC(upc) {
@@ -119,8 +129,8 @@
             document.getElementById('result').innerHTML += `<p>UPC found, but no product details.</p>`;
           }
         })
-        .catch(() => {
-          document.getElementById('result').innerHTML += `<p>UPC lookup failed.</p>`;
+        .catch(err => {
+          document.getElementById('result').innerHTML += `<p style="color:red;">UPC lookup failed. ${err.message || ''}</p>`;
         });
     }
 
@@ -140,7 +150,7 @@
           `;
         })
         .catch(() => {
-          document.getElementById('result').innerHTML += `<p>No FDA drug info found for this name.</p>`;
+          document.getElementById('result').innerHTML += `<p>No FDA drug info found for this product name.</p>`;
         });
     }
   </script>
