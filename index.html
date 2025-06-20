@@ -23,29 +23,36 @@
   </style>
 </head>
 <body>
-  <h1>Scan Barcode to Lookup Drug/Device</h1>
+  <h1>Scan Barcode to Lookup Drug or Device</h1>
   <div id="reader"></div>
   <div id="result">Scan a barcode to begin...</div>
 
   <script>
-    function onScanSuccess(decodedText, decodedResult) {
-      document.getElementById('result').innerHTML = `<p>Scanned: ${decodedText}</p>`;
+    function onScanSuccess(decodedText) {
+      const scanned = decodedText.trim();
+      document.getElementById('result').innerHTML = `<p><strong>Scanned:</strong> ${scanned}</p>`;
 
-      // Decide what kind of code it might be
-      if (/^\d{12,14}$/.test(decodedText)) {
+      // Handle full UDI like (01)00860000667003
+      const match = scanned.match(/\(01\)(\d{14})/);
+      if (match) {
+        lookupDevice(match[1]);
+        return;
+      }
+
+      if (/^\d{12,14}$/.test(scanned)) {
         // UPC or GTIN
-        lookupUPC(decodedText);
-      } else if (/^\d{5}-\d{4}/.test(decodedText)) {
+        lookupUPC(scanned);
+      } else if (/^\d{5}-\d{4}/.test(scanned)) {
         // NDC format
-        lookupDrug(decodedText);
+        lookupDrug(scanned);
       } else {
-        // Try both as NDC and device product code fallback
-        lookupDrugOrDevice(decodedText);
+        // Try both drug and device lookup
+        lookupDrugOrDevice(scanned);
       }
     }
 
     function onScanFailure(error) {
-      // Fail quietly
+      // Do nothing for now
     }
 
     const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
@@ -70,8 +77,8 @@
         });
     }
 
-    function lookupDevice(code) {
-      const url = `https://api.fda.gov/device/registrationlisting.json?search=product_code:${code}`;
+    function lookupDevice(gtin) {
+      const url = `https://api.fda.gov/device/udi.json?search=device_identifier:${gtin}`;
       fetch(url)
         .then(res => res.json())
         .then(data => {
@@ -79,24 +86,23 @@
           document.getElementById('result').innerHTML += `
             <h2>Device Info</h2>
             <p><strong>Device Name:</strong> ${device.device_name}</p>
-            <p><strong>Proprietary Name:</strong> ${device.proprietary_name}</p>
-            <p><strong>Establishment:</strong> ${device.establishment_name}</p>
-            <p><strong>Registration No:</strong> ${device.registration_number}</p>
+            <p><strong>Manufacturer:</strong> ${device.openfda?.device_labeler_name?.[0] || "N/A"}</p>
+            <p><strong>GMDN Term:</strong> ${device.gmdn_term || "N/A"}</p>
+            <p><strong>PMA Number:</strong> ${device.premarket_submission_number || "N/A"}</p>
           `;
         })
         .catch(() => {
-          document.getElementById('result').innerHTML += `<p>No device info found.</p>`;
+          document.getElementById('result').innerHTML += `<p>No device info found for GTIN.</p>`;
         });
     }
 
     function lookupDrugOrDevice(code) {
       lookupDrug(code);
-      setTimeout(() => lookupDevice(code), 2000); // Delay to allow drug search first
+      setTimeout(() => lookupDevice(code), 2000);
     }
 
     function lookupUPC(upc) {
       const url = `https://api.upcitemdb.com/prod/trial/lookup?upc=${upc}`;
-
       fetch(url)
         .then(res => res.json())
         .then(data => {
