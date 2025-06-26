@@ -28,6 +28,12 @@
     p {
       margin: 5px 0;
     }
+    img {
+      max-width: 200px;
+      margin-top: 10px;
+      border-radius: 10px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.2);
+    }
   </style>
 </head>
 <body>
@@ -40,29 +46,23 @@
       const scanned = decodedText.trim();
       document.getElementById('result').innerHTML = `<p><strong>Scanned:</strong> ${scanned}</p>`;
 
-      // Try extracting GTIN from UDI pattern
       const gtinMatch = scanned.match(/\(01\)(\d{14})/);
       if (gtinMatch) {
         lookupDevice(gtinMatch[1]);
         return;
       }
 
-      // If it's 12–14 digit number (UPC/GTIN)
       if (/^\d{12,14}$/.test(scanned)) {
         lookupUPC(scanned);
-      }
-      // If it's in NDC format (e.g. 0573-0149)
-      else if (/^\d{4,5}-\d{3,4}$/.test(scanned)) {
+      } else if (/^\d{4,5}-\d{3,4}$/.test(scanned)) {
         lookupDrug(scanned);
-      }
-      // Otherwise try both
-      else {
+      } else {
         lookupDrugOrDevice(scanned);
       }
     }
 
     function onScanFailure(error) {
-      // Fail quietly
+      // Quietly fail
     }
 
     const html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
@@ -74,13 +74,21 @@
         .then(res => res.json())
         .then(data => {
           const drug = data.results[0];
+          const brand = drug.brand_name;
+          const generic = drug.generic_name;
+          const manufacturer = drug.labeler_name;
+          const dosage = drug.dosage_form;
+
           document.getElementById('result').innerHTML += `
             <h2>Drug Info</h2>
-            <p><strong>Brand:</strong> ${drug.brand_name}</p>
-            <p><strong>Generic:</strong> ${drug.generic_name}</p>
-            <p><strong>Manufacturer:</strong> ${drug.labeler_name}</p>
-            <p><strong>Dosage:</strong> ${drug.dosage_form}</p>
+            <p><strong>Brand:</strong> ${brand}</p>
+            <p><strong>Generic:</strong> ${generic}</p>
+            <p><strong>Manufacturer:</strong> ${manufacturer}</p>
+            <p><strong>Dosage:</strong> ${dosage}</p>
+            <div id="drug-image"></div>
           `;
+
+          fetchDrugImageFromDailyMed(brand || generic || code);
         })
         .catch(err => {
           document.getElementById('result').innerHTML += `<p style="color:red;">No drug info found (NDC). ${err.message || ''}</p>`;
@@ -108,7 +116,7 @@
 
     function lookupDrugOrDevice(code) {
       lookupDrug(code);
-      setTimeout(() => lookupDevice(code), 2000); // Try device after delay
+      setTimeout(() => lookupDevice(code), 2000);
     }
 
     function lookupUPC(upc) {
@@ -119,9 +127,12 @@
           if (data.code === "OK" && data.items.length > 0) {
             const item = data.items[0];
             const name = item.title;
+            const image = item.images?.[0];
+
             document.getElementById('result').innerHTML += `
               <h2>UPC Info</h2>
               <p><strong>Product Name:</strong> ${name}</p>
+              ${image ? `<img src="${image}" alt="${name}">` : ''}
               <p>Searching OpenFDA for: <strong>${name}</strong></p>
             `;
             searchOpenFDAByName(name);
@@ -152,6 +163,42 @@
         .catch(() => {
           document.getElementById('result').innerHTML += `<p>No FDA drug info found for this product name.</p>`;
         });
+    }
+
+    function fetchDrugImageFromDailyMed(name) {
+      const searchUrl = `https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json?drug_name=${encodeURIComponent(name)}`;
+      fetch(searchUrl)
+        .then(res => res.json())
+        .then(data => {
+          if (data.data && data.data.length > 0) {
+            const setId = data.data[0].setid;
+            const docUrl = `https://dailymed.nlm.nih.gov/dailymed/services/v2/spls/${setId}.json`;
+
+            fetch(docUrl)
+              .then(res => res.json())
+              .then(drugData => {
+                const images = drugData.data?.images;
+                if (images && images.length > 0) {
+                  const imageUrl = images[0];
+                  document.getElementById('drug-image').innerHTML = `<img src="${imageUrl}" alt="${name}">`;
+                } else {
+                  fallbackDrugImage(name);
+                }
+              })
+              .catch(() => fallbackDrugImage(name));
+          } else {
+            fallbackDrugImage(name);
+          }
+        })
+        .catch(() => fallbackDrugImage(name));
+    }
+
+    function fallbackDrugImage(query) {
+      const imgUrl = `https://source.unsplash.com/featured/?medicine,${encodeURIComponent(query)}`;
+      document.getElementById("drug-image").innerHTML = `
+        <p><strong>Image (approximate):</strong></p>
+        <img src="${imgUrl}" alt="${query}">
+      `;
     }
   </script>
 </body>

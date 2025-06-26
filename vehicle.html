@@ -38,6 +38,16 @@
       display: inline-block;
       width: 150px;
     }
+    .vehicle-image {
+      margin-top: 20px;
+      text-align: center;
+    }
+    .vehicle-image img {
+      width: 100%;
+      max-width: 500px;
+      border-radius: 8px;
+      box-shadow: 0 0 8px rgba(0,0,0,0.2);
+    }
   </style>
 </head>
 <body>
@@ -73,6 +83,12 @@
             return;
           }
 
+          const imageQuery = `${info.ModelYear} ${info.Make} ${info.Model}`;
+          const imageSearchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(imageQuery)}&iax=images&ia=images`;
+
+          // Use DuckDuckGo image proxy service (not always accurate, but publicly available)
+          const imageSrc = `https://source.unsplash.com/500x300/?${encodeURIComponent(info.Make + " " + info.Model)}`;
+
           resultDiv.innerHTML = `
             <h2>Vehicle Information</h2>
             <div class="field"><strong>Make:</strong> ${info.Make}</div>
@@ -84,6 +100,11 @@
             <div class="field"><strong>Drive Type:</strong> ${info.DriveType || 'N/A'}</div>
             <div class="field"><strong>Plant Country:</strong> ${info.PlantCountry || 'N/A'}</div>
             <div class="field"><strong>Transmission:</strong> ${info.TransmissionStyle || 'N/A'}</div>
+            <div class="vehicle-image">
+              <h3>Representative Image</h3>
+              <img src="${imageSrc}" alt="Vehicle Image">
+              <p><a href="${imageSearchUrl}" target="_blank">See more images</a></p>
+            </div>
           `;
         })
         .catch(() => {
